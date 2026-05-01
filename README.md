@@ -17,7 +17,7 @@ This layer must be used with the **scarthgap** branch of all dependencies.
 | openembedded-core (meta) | https://git.yoctoproject.org/poky | scarthgap |
 | meta-poky | (included in poky) | scarthgap |
 | meta-oe | https://github.com/openembedded/meta-openembedded | scarthgap |
-| meta-qcom | https://github.com/ndechesne/meta-qcom | scarthgap |
+| meta-qcom | https://github.com/qualcomm-linux/meta-qcom | scarthgap |
 
 ## Quick start
 
@@ -31,7 +31,7 @@ git clone -b scarthgap https://git.yoctoproject.org/poky
 git clone -b scarthgap https://github.com/openembedded/meta-openembedded.git
 
 # Clone meta-qcom
-git clone -b scarthgap https://github.com/ndechesne/meta-qcom.git
+git clone -b scarthgap https://github.com/qualcomm-linux/meta-qcom.git
 
 # Clone this layer
 git clone https://github.com/<your-user>/meta-sdradxa.git
