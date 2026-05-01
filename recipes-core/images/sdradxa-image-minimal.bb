@@ -31,6 +31,8 @@ IMAGE_FEATURES += "ssh-server-dropbear"
 
 IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-minimal \
+    libgpiod \
+    libgpiod-tools \
 "
 
 # Users and passwords
