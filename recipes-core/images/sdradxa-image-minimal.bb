@@ -29,6 +29,9 @@ inherit core-image extrausers
 # ssh-server-dropbear: installs and enables dropbear sshd
 IMAGE_FEATURES += "ssh-server-dropbear"
 
+# libgpiod is listed here instead of in the packagegroup because it is
+# dynamically renamed to libgpiod3 at packaging time, which causes an
+# allarch packagegroup QA error. Image recipes are not allarch.
 IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-minimal \
     libgpiod \
