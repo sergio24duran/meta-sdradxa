@@ -1,0 +1,24 @@
+# SD card image for Radxa Dragon Q6A (QCM6490) — UEFI boot
+#
+# Layout:
+#   Partition 1 — EFI System Partition (FAT32, 64 MiB)
+#     Qualcomm UEFI tries SD at EFI/BOOT/BOOTAA64.EFI.
+#     IMAGE_EFI_BOOT_FILES places the uncompressed 'Image' there.
+#     No intermediate bootloader: UEFI → kernel EFI stub directly.
+#
+#   Partition 2 — root filesystem (ext4)
+#     GPT partition name 'rootfs' matches CONFIG_CMDLINE:
+#       root=PARTLABEL=rootfs rootwait rw ...
+
+# --no-fstab-update on BOTH partitions: wic hardcodes /dev/mmcblk0pN entries
+# into /etc/fstab (from --ondisk mmcblk0), but the SD card enumerates as
+# mmcblk1 on this board (mmcblk0 is the non-populated eMMC slot).
+# The kernel mounts rootfs directly via root=PARTLABEL=rootfs (CONFIG_CMDLINE).
+#
+# --part-type EF00: marks partition 1 as "EFI System" in GPT. Without this,
+# wic creates it as type 0700 (Microsoft basic data), which spec-compliant
+# UEFI firmware will not recognize as an ESP.
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label efi --active --align 1024 --size 64M --no-fstab-update --part-type EF00
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfs --align 1024 --no-fstab-update
+
+bootloader --ptable gpt --timeout 0
