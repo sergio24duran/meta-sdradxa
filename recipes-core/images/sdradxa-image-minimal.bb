@@ -1,7 +1,6 @@
 SUMMARY = "Minimal image for Radxa Dragon boards with Qualcomm SoCs"
 DESCRIPTION = "Minimal bootable image: terminal shell, UART console, \
-40-pin GPIO (libgpiod) and SSH (dropbear). \
-Base for all sdradxa images."
+40-pin GPIO (libgpiod) and SSH (dropbear). Base for all sdradxa images."
 
 LICENSE = "MIT"
 
@@ -34,6 +33,7 @@ IMAGE_FEATURES += "ssh-server-dropbear"
 # allarch packagegroup QA error. Image recipes are not allarch.
 IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-minimal \
+    packagegroup-sdradxa-connectivity \
     libgpiod \
     libgpiod-tools \
 "

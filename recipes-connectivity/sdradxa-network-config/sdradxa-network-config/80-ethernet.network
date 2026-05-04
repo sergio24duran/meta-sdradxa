@@ -1,0 +1,16 @@
+# Wired Ethernet — DHCP with static fallback.
+# Matches the RTL8168h (enp1s0) and any future Ethernet adapters.
+#
+# The static address (192.168.10.24) is always configured so the board
+# is reachable even when no DHCP server is present (direct cable).
+# When DHCP succeeds, the DHCP-assigned address and routes take
+# priority (lower RouteMetric).
+[Match]
+Type=ether
+
+[Network]
+DHCP=yes
+Address=192.168.10.24/24
+
+[DHCPv4]
+RouteMetric=100
