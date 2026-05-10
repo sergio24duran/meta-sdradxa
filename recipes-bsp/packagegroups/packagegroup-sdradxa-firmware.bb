@@ -14,6 +14,7 @@ RRECOMMENDS:${PN} = " \
     linux-firmware-qcom-qcs6490-audio \
     linux-firmware-qcom-qcs6490-compute \
     linux-firmware-qcom-qcs6490-adreno \
+    sdradxa-firmware-symlinks \
     ${@bb.utils.contains('DISTRO_FEATURES', 'opengl', 'linux-firmware-qcom-adreno-a660', '', d)} \
     linux-firmware-qcom-vpu-2.0 \
     linux-firmware-lt9611uxc \
