@@ -1,7 +1,7 @@
 SUMMARY = "Firmware packages for the Radxa Dragon Q6A (QCM6490)"
-DESCRIPTION = "Board-specific firmware: GPU, audio DSP, compute DSP, \
-video codec, HDMI bridge. WiFi and Bluetooth firmware are guarded by \
-DISTRO_FEATURES since those subsystems are not yet enabled."
+DESCRIPTION = "Board-specific firmware: QUP v3 serial engine, GPU, audio DSP, \
+compute DSP, video codec, HDMI bridge. WiFi and Bluetooth firmware are guarded \
+by DISTRO_FEATURES since those subsystems are not yet enabled."
 
 LICENSE = "MIT"
 
@@ -11,6 +11,7 @@ inherit packagegroup
 # The subpackages use generic qcs6490-* names and contain SoC-level
 # blobs (ADSP, CDSP, Adreno zap shader) that are not board-specific.
 RRECOMMENDS:${PN} = " \
+    sdradxa-firmware-qupv3 \
     linux-firmware-qcom-qcs6490-audio \
     linux-firmware-qcom-qcs6490-compute \
     linux-firmware-qcom-qcs6490-adreno \
