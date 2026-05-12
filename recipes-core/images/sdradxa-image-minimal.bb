@@ -11,17 +11,16 @@ COMPATIBLE_MACHINE = "^(sdradxa-dragon-q6a)$"
 # variant written by e2fsprogs 1.47.0's resize2fs, causing mount failures.
 EXTRA_IMAGECMD:ext4:append = " -O ^orphan_file"
 
-# wic SD card image
-# UEFI loads EFI/BOOT/BOOTAA64.EFI directly; kernel uses CONFIG_CMDLINE
-# (root=PARTLABEL=rootfs).  The uncompressed 'Image' is a PE/COFF EFI
-# binary and is placed at the EFI removable-media fallback path.
+# wic SD card image (A/B rootfs layout)
+# UEFI loads EFI/BOOT/BOOTAA64.EFI which is the kernel+initramfs bundle.
+# The initramfs reads slot.conf from the ESP to select rootfs_a or rootfs_b.
 # bootimg-partition only copies files listed in IMAGE_BOOT_FILES; it does
 # not install any bootloader binaries, which avoids name collisions on
 # case-insensitive FAT32 (e.g. BOOTAA64.EFI vs bootaa64.efi from bootimg-efi).
 IMAGE_FSTYPES += "wic wic.gz wic.bmap"
 WKS_FILE = "sdradxa-dragon-q6a.wks"
-IMAGE_BOOT_FILES = "Image;EFI/BOOT/BOOTAA64.EFI"
-do_image_wic[depends] += "virtual/kernel:do_deploy"
+IMAGE_BOOT_FILES = "Image-initramfs-${MACHINE}.bin;EFI/BOOT/BOOTAA64.EFI slot.conf"
+do_image_wic[depends] += "virtual/kernel:do_deploy sdradxa-ab-tools:do_deploy"
 
 inherit core-image extrausers
 
@@ -34,6 +33,7 @@ IMAGE_FEATURES += "ssh-server-dropbear"
 IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-minimal \
     packagegroup-sdradxa-connectivity \
+    sdradxa-ab-tools \
     libgpiod \
     libgpiod-tools \
 "

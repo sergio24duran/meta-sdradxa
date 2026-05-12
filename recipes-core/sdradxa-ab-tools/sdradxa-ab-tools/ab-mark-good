@@ -1,0 +1,26 @@
+#!/bin/sh
+set -e
+
+ESP_DEV="/dev/disk/by-partlabel/efi"
+ESP_MNT=$(mktemp -d)
+trap 'umount "$ESP_MNT" 2>/dev/null; rmdir "$ESP_MNT" 2>/dev/null' EXIT
+
+if [ ! -e "$ESP_DEV" ]; then
+    echo "ab-mark-good: ESP device not found" >&2
+    exit 1
+fi
+
+mount -t vfat "$ESP_DEV" "$ESP_MNT"
+
+if [ -f "$ESP_MNT/slot.conf" ]; then
+    . "$ESP_MNT/slot.conf"
+fi
+
+SLOT="${SLOT:-a}"
+TRIES_LEFT=3
+
+echo "SLOT=$SLOT" > "$ESP_MNT/slot.conf"
+echo "TRIES_LEFT=$TRIES_LEFT" >> "$ESP_MNT/slot.conf"
+sync
+
+echo "ab-mark-good: slot $SLOT marked as good (TRIES_LEFT=$TRIES_LEFT)"

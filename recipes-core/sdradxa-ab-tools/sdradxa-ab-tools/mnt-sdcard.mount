@@ -1,0 +1,12 @@
+[Unit]
+Description=Persistent data partition
+After=local-fs-pre.target
+
+[Mount]
+What=/dev/disk/by-partlabel/data
+Where=/mnt/sdcard
+Type=ext4
+Options=defaults
+
+[Install]
+WantedBy=local-fs.target

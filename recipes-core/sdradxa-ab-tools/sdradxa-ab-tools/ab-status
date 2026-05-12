@@ -1,0 +1,30 @@
+#!/bin/sh
+set -e
+
+ESP_DEV="/dev/disk/by-partlabel/efi"
+ESP_MNT=$(mktemp -d)
+trap 'umount "$ESP_MNT" 2>/dev/null; rmdir "$ESP_MNT" 2>/dev/null' EXIT
+
+if [ ! -e "$ESP_DEV" ]; then
+    echo "ab-status: ESP device not found" >&2
+    exit 1
+fi
+
+mount -t vfat -o ro "$ESP_DEV" "$ESP_MNT"
+
+SLOT="(unknown)"
+TRIES_LEFT="(unknown)"
+if [ -f "$ESP_MNT/slot.conf" ]; then
+    . "$ESP_MNT/slot.conf"
+fi
+
+umount "$ESP_MNT"
+
+ROOTFS_A_DEV=$(readlink -f /dev/disk/by-partlabel/rootfs_a 2>/dev/null || echo "(not found)")
+ROOTFS_B_DEV=$(readlink -f /dev/disk/by-partlabel/rootfs_b 2>/dev/null || echo "(not found)")
+
+echo "Active slot:  $SLOT"
+echo "Tries left:   $TRIES_LEFT"
+echo ""
+echo "rootfs_a:     $ROOTFS_A_DEV"
+echo "rootfs_b:     $ROOTFS_B_DEV"
