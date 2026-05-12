@@ -1,0 +1,106 @@
+#!/bin/sh
+set -e
+
+usage() {
+    echo "Usage: ab-update [--force] <rootfs.ext4[.gz]>"
+    echo ""
+    echo "Write an ext4 rootfs image to the inactive A/B slot and"
+    echo "configure the next boot to use it."
+    echo ""
+    echo "Compressed (.gz) images are decompressed on-the-fly."
+    exit 1
+}
+
+FORCE=0
+IMAGE=""
+for arg in "$@"; do
+    case "$arg" in
+        --force) FORCE=1 ;;
+        -h|--help) usage ;;
+        *) IMAGE="$arg" ;;
+    esac
+done
+
+if [ -z "$IMAGE" ] || [ ! -f "$IMAGE" ]; then
+    echo "ab-update: image file not found: ${IMAGE:-<none>}" >&2
+    usage
+fi
+
+COMPRESSED=0
+case "$IMAGE" in
+    *.gz) COMPRESSED=1 ;;
+esac
+
+ESP_DEV="/dev/disk/by-partlabel/efi"
+ESP_MNT=$(mktemp -d)
+trap 'umount "$ESP_MNT" 2>/dev/null; rmdir "$ESP_MNT" 2>/dev/null' EXIT
+
+if [ ! -e "$ESP_DEV" ]; then
+    echo "ab-update: ESP device not found" >&2
+    exit 1
+fi
+
+mount -t vfat "$ESP_DEV" "$ESP_MNT"
+
+SLOT=a
+TRIES_LEFT=3
+if [ -f "$ESP_MNT/slot.conf" ]; then
+    . "$ESP_MNT/slot.conf"
+fi
+
+if [ "$SLOT" = "a" ]; then
+    INACTIVE=b
+else
+    INACTIVE=a
+fi
+
+TARGET_DEV="/dev/disk/by-partlabel/rootfs_$INACTIVE"
+if [ ! -e "$TARGET_DEV" ]; then
+    echo "ab-update: target partition rootfs_$INACTIVE not found" >&2
+    umount "$ESP_MNT"
+    exit 1
+fi
+
+TARGET_REAL=$(readlink -f "$TARGET_DEV")
+IMAGE_SIZE=$(stat -c%s "$IMAGE")
+PART_SIZE=$(blockdev --getsize64 "$TARGET_REAL")
+
+if [ "$COMPRESSED" -eq 0 ] && [ "$IMAGE_SIZE" -gt "$PART_SIZE" ]; then
+    echo "ab-update: image ($IMAGE_SIZE bytes) exceeds partition ($PART_SIZE bytes)" >&2
+    umount "$ESP_MNT"
+    exit 1
+fi
+
+if [ "$FORCE" -ne 1 ]; then
+    echo "Current slot:    $SLOT"
+    echo "Target slot:     $INACTIVE ($TARGET_REAL)"
+    if [ "$COMPRESSED" -eq 1 ]; then
+        echo "Image:           $IMAGE ($(( IMAGE_SIZE / 1048576 )) MiB compressed)"
+    else
+        echo "Image:           $IMAGE ($(( IMAGE_SIZE / 1048576 )) MiB)"
+    fi
+    echo ""
+    printf "Write image and switch to slot %s? [y/N] " "$INACTIVE"
+    read -r confirm
+    case "$confirm" in
+        y|Y|yes|YES) ;;
+        *) echo "Aborted."; umount "$ESP_MNT"; exit 0 ;;
+    esac
+fi
+
+echo "Writing image to $TARGET_REAL ..."
+if [ "$COMPRESSED" -eq 1 ]; then
+    gunzip -c "$IMAGE" | dd of="$TARGET_REAL" bs=4194304
+else
+    dd if="$IMAGE" of="$TARGET_REAL" bs=4194304
+fi
+sync
+
+echo "SLOT=$INACTIVE" > "$ESP_MNT/slot.conf"
+echo "TRIES_LEFT=3" >> "$ESP_MNT/slot.conf"
+sync
+
+umount "$ESP_MNT"
+
+echo ""
+echo "Update complete. Reboot to boot into slot $INACTIVE."

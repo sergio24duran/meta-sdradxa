@@ -1,0 +1,101 @@
+#!/bin/sh
+# A/B root filesystem selection module for initramfs-framework.
+# Reads slot.conf from the ESP to determine which rootfs slot to boot.
+# Sets bootparam_root so the standard 90-rootfs module mounts it.
+
+ESP_MNT="/mnt/esp"
+
+# Find a block device by GPT partition name via sysfs.
+# Usage: find_partdev <PARTNAME>
+# Prints /dev/<devname> on success, empty on failure.
+find_partdev() {
+    local wanted="$1"
+    for uevent in /sys/block/mmcblk*/mmcblk*p*/uevent; do
+        [ -f "$uevent" ] || continue
+        if grep -q "^PARTNAME=${wanted}$" "$uevent"; then
+            echo "/dev/$(grep '^DEVNAME=' "$uevent" | cut -d= -f2)"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Wait for a partition to appear (SD controller may be slow).
+# Usage: wait_partdev <PARTNAME> [timeout_secs]
+wait_partdev() {
+    local name="$1"
+    local timeout="${2:-5}"
+    local dev=""
+    local i=0
+    while [ $i -lt $timeout ]; do
+        dev=$(find_partdev "$name")
+        if [ -n "$dev" ]; then
+            echo "$dev"
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    return 1
+}
+
+abrootfs_enabled() {
+    return 0
+}
+
+abrootfs_run() {
+    local esp_dev slot tries_left rootfs_dev
+
+    esp_dev=$(wait_partdev "efi" 5)
+    if [ -z "$esp_dev" ]; then
+        fatal "abrootfs: ESP partition (PARTNAME=efi) not found"
+    fi
+
+    mkdir -p "$ESP_MNT"
+    mount -t vfat "$esp_dev" "$ESP_MNT"
+    if ! mountpoint -q "$ESP_MNT"; then
+        fatal "abrootfs: failed to mount ESP ($esp_dev)"
+    fi
+
+    # Read or create default slot.conf
+    if [ -f "$ESP_MNT/slot.conf" ]; then
+        . "$ESP_MNT/slot.conf" 2>/dev/null
+    fi
+    slot="${SLOT:-a}"
+    tries_left="${TRIES_LEFT:-3}"
+
+    # Validate
+    case "$slot" in
+        a|b) ;;
+        *) slot=a; tries_left=3 ;;
+    esac
+    case "$tries_left" in
+        ''|*[!0-9]*) tries_left=3 ;;
+    esac
+
+    if [ "$tries_left" -gt 0 ]; then
+        tries_left=$((tries_left - 1))
+    else
+        # Current slot exhausted — switch to the other
+        if [ "$slot" = "a" ]; then
+            slot=b
+        else
+            slot=a
+        fi
+        tries_left=2
+    fi
+
+    echo "SLOT=$slot" > "$ESP_MNT/slot.conf"
+    echo "TRIES_LEFT=$tries_left" >> "$ESP_MNT/slot.conf"
+    sync
+
+    umount "$ESP_MNT"
+
+    rootfs_dev=$(wait_partdev "rootfs_$slot" 5)
+    if [ -z "$rootfs_dev" ]; then
+        fatal "abrootfs: rootfs_$slot partition not found"
+    fi
+
+    bootparam_root="$rootfs_dev"
+    msg "A/B boot: slot=$slot tries_left=$tries_left root=$bootparam_root"
+}

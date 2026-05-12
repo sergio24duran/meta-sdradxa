@@ -1,0 +1,11 @@
+[Unit]
+Description=Mark current A/B boot slot as good
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ab-mark-good
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
