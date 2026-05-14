@@ -1,0 +1,12 @@
+[Unit]
+Description=UFS persistent storage
+After=local-fs-pre.target
+
+[Mount]
+What=/dev/disk/by-label/ufs-data
+Where=/mnt/ufscard
+Type=ext4
+Options=defaults
+
+[Install]
+WantedBy=local-fs.target

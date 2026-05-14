@@ -11,6 +11,7 @@ SRC_URI = " \
     file://ab-mark-good \
     file://ab-mark-good.service \
     file://mnt-sdcard.mount \
+    file://mnt-ufscard.mount \
     file://slot.conf \
 "
 
@@ -18,7 +19,7 @@ S = "${WORKDIR}"
 
 inherit allarch systemd deploy
 
-SYSTEMD_SERVICE:${PN} = "ab-mark-good.service mnt-sdcard.mount"
+SYSTEMD_SERVICE:${PN} = "ab-mark-good.service mnt-sdcard.mount mnt-ufscard.mount"
 SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {
@@ -30,8 +31,10 @@ do_install() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${S}/ab-mark-good.service ${D}${systemd_system_unitdir}/
     install -m 0644 ${S}/mnt-sdcard.mount ${D}${systemd_system_unitdir}/
+    install -m 0644 ${S}/mnt-ufscard.mount ${D}${systemd_system_unitdir}/
 
     install -d ${D}/mnt/sdcard
+    install -d ${D}/mnt/ufscard
 }
 
 do_deploy() {
@@ -45,7 +48,9 @@ FILES:${PN} = " \
     ${bindir}/ab-mark-good \
     ${systemd_system_unitdir}/ab-mark-good.service \
     ${systemd_system_unitdir}/mnt-sdcard.mount \
+    ${systemd_system_unitdir}/mnt-ufscard.mount \
     /mnt/sdcard \
+    /mnt/ufscard \
 "
 
 RDEPENDS:${PN} = "util-linux-mount"
