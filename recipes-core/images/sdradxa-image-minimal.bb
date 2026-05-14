@@ -34,6 +34,7 @@ IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-minimal \
     packagegroup-sdradxa-connectivity \
     sdradxa-ab-tools \
+    sdradxa-ssh-dev-keys \
     libgpiod \
     libgpiod-tools \
 "
