@@ -33,7 +33,6 @@ IMAGE_FEATURES += "ssh-server-dropbear"
 IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-minimal \
     packagegroup-sdradxa-connectivity \
-    packagegroup-sdradxa-multimedia \
     sdradxa-ab-tools \
     sdradxa-ssh-dev-keys \
     libgpiod \
