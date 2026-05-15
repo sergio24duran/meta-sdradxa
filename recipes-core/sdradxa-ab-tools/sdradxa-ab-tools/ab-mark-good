@@ -23,4 +23,10 @@ echo "SLOT=$SLOT" > "$ESP_MNT/slot.conf"
 echo "TRIES_LEFT=$TRIES_LEFT" >> "$ESP_MNT/slot.conf"
 sync
 
+# Cache slot info in tmpfs so other tools (e.g. MOTD) can read it without
+# mounting the ESP partition again
+mkdir -p /run/sdradxa
+echo "$SLOT"       > /run/sdradxa/slot
+echo "$TRIES_LEFT" > /run/sdradxa/tries
+
 echo "ab-mark-good: slot $SLOT marked as good (TRIES_LEFT=$TRIES_LEFT)"
