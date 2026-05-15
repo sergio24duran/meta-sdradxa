@@ -9,4 +9,5 @@ inherit packagegroup
 RDEPENDS:${PN} = " \
     bash \
     util-linux \
+    sdradxa-motd \
 "
