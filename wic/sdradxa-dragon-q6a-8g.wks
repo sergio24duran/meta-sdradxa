@@ -1,0 +1,16 @@
+# SD card image for Radxa Dragon Q6A (QCM6490) — 8 GB SD layout
+#
+# Target: 8 GB SD cards (~7.4 GiB usable)
+#
+# Layout:
+#   p1 — EFI System Partition (FAT32, 512 MiB)
+#   p2 — rootfs_a (ext4, 2 GiB) — A/B slot A
+#   p3 — rootfs_b (ext4, 2 GiB) — A/B slot B
+#   p4 — data    (ext4, 2 GiB) — persistent user data (/mnt/sdcard)
+
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label efi --active --align 1024 --fixed-size 512M --no-fstab-update --part-type EF00
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootfs_a --align 1024 --fixed-size 2048M --no-fstab-update
+part --ondisk mmcblk0 --fstype=ext4 --label rootfs_b --align 1024 --fixed-size 2048M --no-fstab-update
+part --ondisk mmcblk0 --fstype=ext4 --label data --align 1024 --fixed-size 2048M --no-fstab-update
+
+bootloader --ptable gpt --timeout 0

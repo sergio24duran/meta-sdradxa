@@ -18,7 +18,8 @@ EXTRA_IMAGECMD:ext4:append = " -O ^orphan_file"
 # not install any bootloader binaries, which avoids name collisions on
 # case-insensitive FAT32 (e.g. BOOTAA64.EFI vs bootaa64.efi from bootimg-efi).
 IMAGE_FSTYPES += "wic wic.gz wic.bmap"
-WKS_FILE = "sdradxa-dragon-q6a.wks"
+SDCARD_SIZE ?= "64g"
+WKS_FILE = "sdradxa-dragon-q6a-${SDCARD_SIZE}.wks"
 IMAGE_BOOT_FILES = "Image-initramfs-${MACHINE}.bin;EFI/BOOT/BOOTAA64.EFI slot.conf"
 do_image_wic[depends] += "virtual/kernel:do_deploy sdradxa-ab-tools:do_deploy"
 
