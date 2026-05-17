@@ -26,6 +26,20 @@ do_image_wic[depends] += "virtual/kernel:do_deploy sdradxa-ab-tools:do_deploy"
 
 inherit core-image extrausers
 
+# Write image identity after rootfs assembly. ROOTFS_POSTPROCESS_COMMAND is the
+# correct hook for shell code (do_rootfs is a Python task in image.bbclass).
+# ${PN} = image recipe name (sdradxa-image-minimal or -full).
+# Runs fresh on every image build so DATETIME is image build time, not the
+# stale package-level timestamp frozen in sstate cache.
+ROOTFS_POSTPROCESS_COMMAND += "write_image_release;"
+
+write_image_release() {
+    BUILD_DATE=$(echo "${DATETIME}" | \
+        sed 's/\(....\)\(..\)\(..\)\(..\)\(..\).*/\1-\2-\3 \4:\5 UTC/')
+    echo "IMAGE_ID=${PN}"               > ${IMAGE_ROOTFS}/etc/image-release
+    echo "IMAGE_BUILDDATE=$BUILD_DATE" >> ${IMAGE_ROOTFS}/etc/image-release
+}
+
 # ssh-server-dropbear: installs and enables dropbear sshd
 IMAGE_FEATURES += "ssh-server-dropbear"
 
