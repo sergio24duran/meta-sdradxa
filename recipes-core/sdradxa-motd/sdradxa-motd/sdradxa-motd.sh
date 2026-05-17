@@ -4,6 +4,10 @@
 # The active A/B slot is cached at /run/sdradxa/ by ab-mark-good.service
 # at boot, so this script never needs to mount the ESP partition.
 
+# --- Image identity (written by image recipe at build time) ---
+IMAGE_ID=$(grep '^IMAGE_ID=' /etc/image-release 2>/dev/null | cut -d= -f2)
+IMAGE_BUILDDATE=$(grep '^IMAGE_BUILDDATE=' /etc/image-release 2>/dev/null | cut -d= -f2)
+
 # --- A/B slot (cached by ab-mark-good at boot) ---
 SLOT=$(cat /run/sdradxa/slot  2>/dev/null || echo "?")
 TRIES=$(cat /run/sdradxa/tries 2>/dev/null || echo "?")
@@ -32,6 +36,8 @@ DISK_UFS=$(disk_info /mnt/ufscard)
 IPS=$(ip -4 addr | awk '/inet /{print $2}' | grep -v '^127' \
     | sed 's|/.*||' | tr '\n' '  ')
 
+printf "  Image  : %s\n"         "$IMAGE_ID"
+printf "  Built  : %s\n"         "$IMAGE_BUILDDATE"
 printf "  Host   : %s\n"         "$(hostname)"
 printf "  Kernel : %s\n"         "$KERNEL"
 printf "  Uptime : %dh %dm\n"    "$UPTIME_H" "$UPTIME_M"
