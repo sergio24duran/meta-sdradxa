@@ -8,6 +8,7 @@ PACKAGE_INSTALL = " \
     initramfs-module-e2fs \
     initramfs-module-rootfs \
     sdradxa-initramfs-abrootfs \
+    sdradxa-initramfs-overlayroot \
     busybox \
     base-passwd \
 "

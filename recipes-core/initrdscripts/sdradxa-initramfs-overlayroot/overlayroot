@@ -1,0 +1,101 @@
+#!/bin/sh
+# -----------------------------------------------------------------------
+# 92-overlayroot — tmpfs overlay for read-only rootfs
+# -----------------------------------------------------------------------
+# This initramfs-framework module runs AFTER 90-rootfs has mounted the
+# real root filesystem at /rootfs. It layers a tmpfs-backed overlayfs
+# on top so that:
+#
+#   reads  → served from the real rootfs on SD card (lower layer, ro)
+#   writes → go to RAM via tmpfs (upper layer, rw)
+#
+# The SD card partition is NEVER written to during normal operation.
+# All runtime changes (logs, temp files, etc.) live in RAM and are
+# lost on reboot — the system always boots to a known-good state.
+#
+# The original read-only rootfs is accessible at /rofs inside the
+# running system (useful for debugging or diffing against base).
+#
+# To temporarily DISABLE the overlay (e.g. for development), add
+# "nooverlay" to the kernel command line. The system will then boot
+# with the rootfs mounted read-only and no overlay — you can remount
+# it rw manually with: mount -o remount,rw /
+# -----------------------------------------------------------------------
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+OLDROOT="/rootfs"
+OVERLAY="/overlay"
+UPPER_DIR="${OVERLAY}/upper"
+WORK_DIR="${OVERLAY}/work"
+NEWROOT="${OVERLAY}/merged"
+ROMOUNT="${OVERLAY}/rofs"
+
+overlayroot_enabled() {
+    # Skip if "nooverlay" kernel parameter is set
+    if [ -n "$bootparam_nooverlay" ]; then
+        msg "overlayroot: disabled via nooverlay kernel parameter"
+        return 1
+    fi
+    return 0
+}
+
+overlayroot_run() {
+    # Remount the real rootfs as read-only
+    mount -o remount,ro ${OLDROOT}
+    if [ $? -ne 0 ]; then
+        msg "overlayroot: WARNING — failed to remount ${OLDROOT} as read-only"
+        msg "overlayroot: continuing boot WITHOUT overlay protection"
+        return
+    fi
+
+    # Create tmpfs for the writable layer (upper + work directories).
+    # Capped at 512 MB so a runaway log or cache can never starve the
+    # system RAM (important when running AI/NPU workloads alongside).
+    mkdir -p ${OVERLAY}
+    mount -t tmpfs -o size=512M tmpfs ${OVERLAY}
+    if [ $? -ne 0 ]; then
+        msg "overlayroot: WARNING — failed to mount tmpfs"
+        msg "overlayroot: continuing boot with read-only rootfs (no overlay)"
+        return
+    fi
+
+    mkdir -p ${UPPER_DIR} ${WORK_DIR} ${NEWROOT} ${ROMOUNT}
+
+    # Bind-mount the real rootfs to a permanent location so it remains
+    # accessible at /rofs after switch_root.
+    mount -o bind ${OLDROOT} ${ROMOUNT}
+
+    # Mount the overlay: reads from the real rootfs, writes to tmpfs
+    mount -t overlay overlay \
+        -o lowerdir=${ROMOUNT},upperdir=${UPPER_DIR},workdir=${WORK_DIR} \
+        ${NEWROOT}
+    if [ $? -ne 0 ]; then
+        msg "overlayroot: WARNING — failed to mount overlayfs"
+        msg "overlayroot: continuing boot with read-only rootfs (no overlay)"
+        umount ${ROMOUNT} 2>/dev/null
+        umount ${OVERLAY} 2>/dev/null
+        return
+    fi
+
+    # Create mount points inside the new root and move kernel filesystems
+    mkdir -p ${NEWROOT}/proc ${NEWROOT}/dev ${NEWROOT}/sys ${NEWROOT}/rofs
+
+    # Move the read-only rootfs bind mount into the new root so it
+    # survives the switch_root pivot.
+    mount -n --move ${ROMOUNT} ${NEWROOT}/rofs
+
+    # Move kernel virtual filesystems into the overlay root
+    mount -n --move /proc ${NEWROOT}/proc
+    mount -n --move /sys ${NEWROOT}/sys
+    mount -n --move /dev ${NEWROOT}/dev
+
+    msg "overlayroot: active — writes go to RAM, base rootfs is read-only at /rofs"
+
+    # Jump into the overlay. This replaces the current init process,
+    # so the 99-finish module is never reached.
+    exec chroot ${NEWROOT}/ ${bootparam_init:-/sbin/init}
+
+    # If exec fails, we end up here
+    msg "overlayroot: FATAL — chroot failed, dropping to read-only boot"
+}
