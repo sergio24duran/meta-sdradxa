@@ -25,7 +25,6 @@ disk_info() {
     mountpoint -q "$1" 2>/dev/null || { echo "not mounted"; return; }
     df -h "$1" | awk 'NR==2{printf "%s / %s (%s)", $3, $2, $5}'
 }
-DISK_ROOT=$(disk_info /)
 DISK_SD=$(disk_info /mnt/sdcard)
 DISK_UFS=$(disk_info /mnt/ufscard)
 
@@ -37,7 +36,6 @@ printf "  Host   : %s\n"         "$(hostname)"
 printf "  Kernel : %s\n"         "$KERNEL"
 printf "  Uptime : %dh %dm\n"    "$UPTIME_H" "$UPTIME_M"
 printf "  Memory : %sG / %sG\n"  "$MEM_USED" "$MEM_TOTAL"
-printf "  Disk / : %s\n"         "$DISK_ROOT"
 printf "  SD     : %s\n"         "$DISK_SD"
 printf "  UFS    : %s\n"         "$DISK_UFS"
 printf "  A/B    : slot %s  (tries_left: %s)\n" "$SLOT" "$TRIES"
