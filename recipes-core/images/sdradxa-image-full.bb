@@ -10,6 +10,7 @@ require recipes-core/images/sdradxa-image-minimal.bb
 # allarch packagegroup QA error. Image recipes are not allarch.
 IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-connectivity \
+    packagegroup-sdradxa-ai \
     libgpiod \
     libgpiod-tools \
 "
