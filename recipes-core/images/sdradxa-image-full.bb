@@ -11,6 +11,7 @@ require recipes-core/images/sdradxa-image-minimal.bb
 IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-connectivity \
     packagegroup-sdradxa-ai \
+    packagegroup-sdradxa-camera \
     libgpiod \
     libgpiod-tools \
 "

@@ -21,8 +21,8 @@ EXTRA_IMAGECMD:ext4:append = " -O ^orphan_file"
 IMAGE_FSTYPES += "wic wic.gz wic.bmap"
 SDCARD_SIZE ?= "64g"
 WKS_FILE = "sdradxa-dragon-q6a-${SDCARD_SIZE}.wks"
-IMAGE_BOOT_FILES = "Image-initramfs-${MACHINE}.bin;EFI/BOOT/BOOTAA64.EFI slot.conf"
-do_image_wic[depends] += "virtual/kernel:do_deploy sdradxa-ab-tools:do_deploy"
+IMAGE_BOOT_FILES = "Image-initramfs-${MACHINE}.bin;EFI/BOOT/BOOTAA64.EFI slot.conf sdradxa-dragon-q6a-bpk.dtb;EFI/bpk/bpk.dtb"
+do_image_wic[depends] += "virtual/kernel:do_deploy sdradxa-ab-tools:do_deploy sdradxa-dtb-overlays:do_deploy"
 
 inherit core-image extrausers
 
