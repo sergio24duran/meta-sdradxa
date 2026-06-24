@@ -3,11 +3,16 @@
  * Copyright (c) 2025 Radxa Computer (Shenzhen) Co., Ltd.
  */
 
-// Vendored from radxa-pkg/radxa-overlays @ a0ffd564a2fd with one change:
-// the vdda-phy/vdda-pll supplies are dropped because the qcom-next 7.0 DT
-// for the Dragon Q6A does not define the PMIC regulators yet (the regulator
-// core hands the CAMSS driver dummies). Revisit when validating the sensor:
-// the rails currently ride the PMIC power-on defaults.
+// Vendored from radxa-pkg/radxa-overlays @ a0ffd564a2fd with two changes:
+//  1. The vdda-phy/vdda-pll supplies are dropped because the qcom-next 7.0 DT
+//     for the Dragon Q6A does not define the PMIC regulators yet (the regulator
+//     core hands the CAMSS driver dummies). The rails ride the PMIC power-on
+//     defaults.
+//  2. The sensor's reset-gpios (XCLR, gpio20) is replaced by a gpio-hog that
+//     drives gpio20 high at boot. The upstream imx214 driver only claims
+//     enable-gpios, so reset-gpios was left floating and held the sensor in
+//     reset (I2C ENXIO on chip-id read). Verified on the bench board: with
+//     gpio20 high the sensor probes and captures. See cam0_xclr_hog below.
 
 /dts-v1/;
 /plugin/;
@@ -68,7 +73,11 @@
 
 		reg = <0x10>;
 
-		reset-gpios = <&tlmm 20 GPIO_ACTIVE_LOW>;
+		// XCLR (gpio20) is NOT listed as reset-gpios: the upstream imx214
+		// driver only claims enable-gpios, so a reset-gpios here would be
+		// left floating-input and hold the sensor in reset (I2C ENXIO on
+		// chip-id read). XCLR is instead driven high by the cam0_xclr_hog
+		// gpio-hog below. enable-gpios stays — the driver does use it.
 		enable-gpios = <&tlmm 36 GPIO_ACTIVE_HIGH>;
 		pinctrl-names = "default", "suspend";
 		pinctrl-0 = <&cam0_default>;
@@ -89,6 +98,16 @@
 };
 
 &tlmm {
+	// Drive IMX214 XCLR (gpio20, active-high reset release) high at gpiochip
+	// registration and hold it. The imx214 driver ignores reset-gpios, so
+	// without this the line floats and the sensor never leaves reset.
+	cam0_xclr_hog: cam0-xclr-hog {
+		gpio-hog;
+		gpios = <20 GPIO_ACTIVE_HIGH>;
+		output-high;
+		line-name = "imx214-xclr";
+	};
+
 	cam0_default: cam0-default-state {
 		pins = "gpio64";
 		function = "cam_mclk";
