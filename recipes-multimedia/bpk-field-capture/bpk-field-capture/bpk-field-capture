@@ -1,0 +1,66 @@
+#!/bin/sh
+# bpk-field-capture [scenario] [gpio_line] [edge] [led_line] [bias]
+# Standalone ON-BOARD capture loop: wait for a GPIO button press, grab one
+# libcamera frame (the deployment ISP path) and save it to the persistent UFS
+# card. Blinks a status LED on each saved frame. Runs entirely on the board
+# (no PC) so it works in the field on battery. Meant to run under systemd
+# (bpk-field-capture.service) but also works standalone.
+#
+# Pin mapping (verified on-board): gpiochip4 line offset == the SoC GPIO number
+# (Radxa's own example uses /dev/gpiochip4 with line==GPIO#). Header mapping:
+#   line  98 = GPIO_98 = physical header pin 38  (button)
+#   line  99 = GPIO_99 = physical header pin 40  (LED)
+# Confirmed by edge-monitoring the line while touching the physical pin.
+#
+# Bias note: runtime libgpiod bias (`-b`) is INEFFECTIVE on this SoC's TLMM header
+# pins -- the line floats regardless (measured on lines 98/100/97). Rest level MUST
+# come from hardware: an external 10k pull-up on the button pin (button to GND), or
+# a device-tree pinctrl bias (see the recipe README for the gpio-keys migration
+# that would drop the external resistor).
+# Wiring: button pin 38 <-> GND (pin 37), plus a 10k pull-up from pin 38 to
+# 3V3 (pin 17). Press = LOW -> falling edge; release = HIGH (10k) -> rearm.
+#
+#   scenario : filename prefix + folder (default "shot")
+#   gpio_line: gpiochip4 line offset for the button (default 98 = phys pin 38)
+#   edge     : rising | falling (default falling; button to GND + ext pull-up)
+#   led_line : gpiochip4 line offset for the status LED (default 99 = phys pin 40)
+#   bias     : pull-up | pull-down | disabled (requested but SoC ignores it; the
+#              external resistor is what actually defines the rest level)
+#
+# Stop with Ctrl-C. Under systemd: `systemctl stop bpk-field-capture`.
+SCN=${1:-shot}; LINE=${2:-98}; EDGE=${3:-falling}; LED=${4:-99}; BIAS=${5:-pull-up}
+CHIP=gpiochip4
+DIR=/mnt/ufscard/tuning/$SCN
+mkdir -p "$DIR"
+FB=37675008            # 4088*2304*4 ABGR8888
+
+# 2 short blinks, ends off (~360ms). No-op if no LED wired on that line.
+blink_ok() { gpioset -c "$CHIP" -t 120ms,120ms,120ms,0 "$LED"=1 >/dev/null 2>&1; }
+# fast burst = capture failed (camera busy / no frame). Ends off.
+blink_err() { gpioset -c "$CHIP" -t 60ms,60ms,60ms,60ms,60ms,60ms,60ms,0 "$LED"=1 >/dev/null 2>&1; }
+
+shoot() {
+  for p in $(ps -w 2>/dev/null | grep -E "/usr/bin/cam" | grep -v grep | awk '{print $1}'); do
+    kill -9 "$p" 2>/dev/null; done
+  TS=$(date +%Y%m%d_%H%M%S)
+  OUT="$DIR/${SCN}_${TS}.abgr"
+  cam -c 1 --capture=6 --file="$OUT" >/dev/null 2>&1 </dev/null
+  SZ=$(wc -c < "$OUT" 2>/dev/null)
+  if [ -z "$SZ" ] || [ "$SZ" -lt "$FB" ]; then
+    echo "  ! capture failed (camera busy?)"; blink_err; return
+  fi
+  NF=$((SZ / FB))
+  if [ "$NF" -gt 1 ]; then
+    dd if="$OUT" of="$OUT.l" bs="$FB" skip=$((NF - 1)) count=1 2>/dev/null; mv "$OUT.l" "$OUT"
+  fi
+  N=$(ls "$DIR"/*.abgr 2>/dev/null | wc -l)
+  echo "[$(date +%H:%M:%S)] shot -> $(basename "$OUT")   (#$N in $SCN)"
+  blink_ok
+}
+
+echo "ready: scenario=$SCN  button=$CHIP line $LINE ($EDGE, $BIAS)  led=line $LED  -> $DIR"
+echo "press the button to shoot. Ctrl-C to stop."
+# one capture per debounced edge event
+gpiomon -c "$CHIP" -b "$BIAS" -e "$EDGE" -p 400ms -F '%e' "$LINE" </dev/null | while read ev; do
+  [ -n "$ev" ] && shoot
+done

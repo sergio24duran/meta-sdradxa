@@ -14,4 +14,5 @@ IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-camera \
     libgpiod \
     libgpiod-tools \
+    bpk-field-capture \
 "
