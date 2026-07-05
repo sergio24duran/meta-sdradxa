@@ -12,8 +12,16 @@ COMPATIBLE_MACHINE = "^(sdradxa-dragon-q6a)$"
 # variant written by e2fsprogs 1.47.0's resize2fs, causing mount failures.
 EXTRA_IMAGECMD:ext4:append = " -O ^orphan_file"
 
-# wic SD card image (A/B rootfs layout)
-# UEFI loads EFI/BOOT/BOOTAA64.EFI which is the kernel+initramfs bundle.
+# wic SD card image (A/B rootfs layout, boot-counting kernel fallback)
+# UEFI loads EFI/BOOT/BOOTAA64.EFI = systemd-boot, which picks a loader entry:
+# bpk-good.conf (known-good kernel+DTB pair in bank EFI/bpk/0 or /1) or, when
+# a candidate is staged by ab-kernel, bpk-new+N.conf (the other bank). sd-boot
+# decrements the +N filename counter by FAT rename on every attempt (works
+# without NVRAM Boot#### support); at +0 the entry is "bad" and bpk-good
+# boots — a broken kernel/DTB can no longer brick the board (LES-010).
+# systemd-bless-boot removes the counter once boot-complete.target is reached;
+# ab-kernel promote then rewrites bpk-good.conf to the new bank (single atomic
+# rename is the commit point).
 # The initramfs reads slot.conf from the ESP to select rootfs_a or rootfs_b.
 # bootimg-partition only copies files listed in IMAGE_BOOT_FILES; it does
 # not install any bootloader binaries, which avoids name collisions on
@@ -21,8 +29,15 @@ EXTRA_IMAGECMD:ext4:append = " -O ^orphan_file"
 IMAGE_FSTYPES += "wic wic.gz wic.bmap"
 SDCARD_SIZE ?= "64g"
 WKS_FILE = "sdradxa-dragon-q6a-${SDCARD_SIZE}.wks"
-IMAGE_BOOT_FILES = "Image-initramfs-${MACHINE}.bin;EFI/BOOT/BOOTAA64.EFI slot.conf sdradxa-dragon-q6a-bpk.dtb;EFI/bpk/bpk.dtb"
-do_image_wic[depends] += "virtual/kernel:do_deploy sdradxa-ab-tools:do_deploy sdradxa-dtb-overlays:do_deploy"
+IMAGE_BOOT_FILES = " \
+    systemd-bootaa64.efi;EFI/BOOT/BOOTAA64.EFI \
+    loader.conf;loader/loader.conf \
+    bpk-good.conf;loader/entries/bpk-good.conf \
+    Image-initramfs-${MACHINE}.bin;EFI/bpk/0/Image.efi \
+    sdradxa-dragon-q6a-bpk.dtb;EFI/bpk/0/bpk.dtb \
+    slot.conf \
+"
+do_image_wic[depends] += "virtual/kernel:do_deploy sdradxa-ab-tools:do_deploy sdradxa-dtb-overlays:do_deploy systemd-boot:do_deploy"
 
 inherit core-image extrausers
 

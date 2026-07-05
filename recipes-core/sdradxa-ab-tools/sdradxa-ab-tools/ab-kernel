@@ -1,0 +1,182 @@
+#!/bin/sh
+# ab-kernel — stage/promote kernel+DTB updates with systemd-boot boot counting.
+#
+# ESP layout:
+#   EFI/BOOT/BOOTAA64.EFI          systemd-boot
+#   loader/entries/bpk-good.conf   known-good entry -> /EFI/bpk/<bank>
+#   loader/entries/bpk-new+N.conf  candidate entry  -> the other bank
+#   EFI/bpk/0, EFI/bpk/1           kernel banks {Image.efi, bpk.dtb}
+#
+# A candidate gets 3 boot attempts: sd-boot decrements the +N filename counter
+# by FAT rename on every attempt, and at +0 falls back to bpk-good — a broken
+# kernel/DTB can never brick the board (LES-010). systemd-bless-boot renames
+# bpk-new+N.conf -> bpk-new.conf once boot-complete.target is reached;
+# "ab-kernel promote" then commits it as the good entry. Every write is
+# temp+rename; the bpk-good.conf rename is the single commit point, so a
+# power cut at any moment leaves a bootable ESP.
+set -e
+
+ESP=/efi
+ENTRIES="$ESP/loader/entries"
+GOOD="$ENTRIES/bpk-good.conf"
+BLESSED="$ENTRIES/bpk-new.conf"
+TRIES=3
+
+usage() {
+    echo "Usage: ab-kernel <command>"
+    echo ""
+    echo "Commands:"
+    echo "  stage <Image.efi> <dtb>   Stage a candidate kernel+DTB into the inactive bank"
+    echo "  status                    Show good/candidate entry state"
+    echo "  promote                   Commit a blessed candidate as the good kernel"
+    echo "  abort                     Drop a pending/failed candidate entry"
+    exit 1
+}
+
+die() {
+    echo "ab-kernel: $*" >&2
+    exit 1
+}
+
+ensure_esp() {
+    # Touching $ESP triggers efi.automount; fall back to a manual mount on
+    # images that predate the mount units.
+    ls "$ESP" > /dev/null 2>&1 || true
+    if ! mountpoint -q "$ESP"; then
+        [ -e /dev/disk/by-partlabel/efi ] || die "ESP device not found"
+        mkdir -p "$ESP"
+        mount -t vfat /dev/disk/by-partlabel/efi "$ESP"
+    fi
+    [ -d "$ENTRIES" ] || die "no loader/entries on ESP (not a systemd-boot layout?)"
+}
+
+# Bank referenced by an entry file: the N in "linux /EFI/bpk/N/Image.efi"
+entry_bank() {
+    sed -n 's|^linux[ \t]*/EFI/bpk/\([01]\)/Image.efi$|\1|p' "$1"
+}
+
+candidate_file() {
+    # Blessed first, then counted (+LEFT or +LEFT-DONE). Always returns 0:
+    # "no candidate" is empty output, not a failure (set -e is active and
+    # callers capture with $()).
+    if [ -f "$BLESSED" ]; then
+        echo "$BLESSED"
+        return 0
+    fi
+    for f in "$ENTRIES"/bpk-new+*.conf; do
+        if [ -f "$f" ]; then
+            echo "$f"
+            return 0
+        fi
+    done
+    return 0
+}
+
+write_entry() {
+    # write_entry <path> <title> <bank> — temp+rename
+    tmp="$1.tmp"
+    printf 'title %s\nlinux /EFI/bpk/%s/Image.efi\ndevicetree /EFI/bpk/%s/bpk.dtb\n' \
+        "$2" "$3" "$3" > "$tmp"
+    sync
+    mv "$tmp" "$1"
+    sync
+}
+
+cmd_stage() {
+    KERNEL="$1"
+    DTB="$2"
+    [ -n "$KERNEL" ] && [ -n "$DTB" ] || usage
+    [ -f "$KERNEL" ] || die "kernel not found: $KERNEL"
+    [ -f "$DTB" ] || die "dtb not found: $DTB"
+    # Cheap sanity: PE header on the kernel, FDT magic on the DTB. A wrong
+    # file here costs 3 wasted boots, not a brick, but catch it early anyway.
+    # (cmp against printf'd octal bytes: busybox od lacks -A/-t.)
+    [ "$(dd if="$KERNEL" bs=1 count=2 2>/dev/null)" = "MZ" ] \
+        || die "$KERNEL is not an EFI (PE) kernel image"
+    MAGIC=$(mktemp)
+    printf '\320\015\376\355' > "$MAGIC"
+    if ! dd if="$DTB" bs=1 count=4 2>/dev/null | cmp -s "$MAGIC" -; then
+        rm -f "$MAGIC"
+        die "$DTB is not a flattened device tree"
+    fi
+    rm -f "$MAGIC"
+
+    ensure_esp
+    CAND=$(candidate_file)
+    [ -z "$CAND" ] || die "candidate already staged ($(basename "$CAND")) — promote or abort first"
+
+    GOOD_BANK=$(entry_bank "$GOOD")
+    [ -n "$GOOD_BANK" ] || die "cannot parse bank from $GOOD"
+    BANK=$((1 - GOOD_BANK))
+    DEST="$ESP/EFI/bpk/$BANK"
+    mkdir -p "$DEST"
+
+    cp "$KERNEL" "$DEST/Image.efi.tmp"
+    sync
+    mv "$DEST/Image.efi.tmp" "$DEST/Image.efi"
+    cp "$DTB" "$DEST/bpk.dtb.tmp"
+    sync
+    mv "$DEST/bpk.dtb.tmp" "$DEST/bpk.dtb"
+    sync
+
+    # Entry file goes in LAST: until this rename the candidate is inert.
+    write_entry "$ENTRIES/bpk-new+$TRIES.conf" \
+        "BPK kernel (candidate $(date -u +%Y-%m-%dT%H:%MZ))" "$BANK"
+
+    echo "ab-kernel: candidate staged in bank $BANK with $TRIES boot attempts"
+    echo "ab-kernel: reboot to test; then 'ab-kernel status' / 'ab-kernel promote'"
+}
+
+cmd_status() {
+    ensure_esp
+    GOOD_BANK=$(entry_bank "$GOOD" 2>/dev/null)
+    echo "good entry:   bank ${GOOD_BANK:-(missing!)}"
+    CAND=$(candidate_file)
+    if [ -z "$CAND" ]; then
+        echo "candidate:    none"
+        return
+    fi
+    NAME=$(basename "$CAND")
+    BANK=$(entry_bank "$CAND")
+    case "$NAME" in
+        bpk-new.conf)
+            echo "candidate:    bank $BANK — BLESSED (boot succeeded), run 'ab-kernel promote'" ;;
+        bpk-new+0*.conf)
+            echo "candidate:    bank $BANK — FAILED (attempts exhausted, running fallback), run 'ab-kernel abort'" ;;
+        *)
+            LEFT=$(echo "$NAME" | sed -n 's/^bpk-new+\([0-9]*\).*\.conf$/\1/p')
+            echo "candidate:    bank $BANK — pending, $LEFT attempt(s) left ($NAME)" ;;
+    esac
+}
+
+cmd_promote() {
+    ensure_esp
+    if [ ! -f "$BLESSED" ]; then
+        CAND=$(candidate_file)
+        [ -n "$CAND" ] || die "nothing to promote (no candidate staged)"
+        die "candidate not blessed yet ($(basename "$CAND")) — boot it successfully first"
+    fi
+    BANK=$(entry_bank "$BLESSED")
+    [ -n "$BANK" ] || die "cannot parse bank from $BLESSED"
+    write_entry "$GOOD" "BPK kernel (good)" "$BANK"   # commit point
+    rm -f "$BLESSED"
+    sync
+    echo "ab-kernel: bank $BANK promoted to good"
+}
+
+cmd_abort() {
+    ensure_esp
+    CAND=$(candidate_file)
+    [ -n "$CAND" ] || die "nothing to abort"
+    rm -f "$ENTRIES"/bpk-new*.conf
+    sync
+    echo "ab-kernel: candidate dropped (bank files left inert)"
+}
+
+case "$1" in
+    stage)   shift; cmd_stage "$@" ;;
+    status)  cmd_status ;;
+    promote) cmd_promote ;;
+    abort)   cmd_abort ;;
+    *)       usage ;;
+esac
