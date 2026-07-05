@@ -1,0 +1,9 @@
+[Unit]
+Description=EFI System Partition (automount)
+
+[Automount]
+Where=/efi
+TimeoutIdleSec=60
+
+[Install]
+WantedBy=local-fs.target
