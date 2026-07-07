@@ -10,4 +10,5 @@ RDEPENDS:${PN} = " \
     bash \
     util-linux \
     sdradxa-motd \
+    sdradxa-watchdog \
 "
