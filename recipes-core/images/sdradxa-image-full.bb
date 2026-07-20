@@ -14,6 +14,7 @@ IMAGE_INSTALL:append = " \
     packagegroup-sdradxa-camera \
     packagegroup-sdradxa-pytools \
     mavlink-router \
+    mavsdk \
     libgpiod \
     libgpiod-tools \
     bpk-field-capture \
