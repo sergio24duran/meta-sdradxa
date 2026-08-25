@@ -1,30 +1,54 @@
 #!/bin/sh
+# Report which slot is running and which one the next boot will use.
+#
+# Those are two different questions and conflating them is how a half-applied
+# update goes unnoticed: slot.conf selects the NEXT boot, while the running
+# system is whatever the initramfs mounted this time (LES-025).
 set -e
 
 ESP_DEV="/dev/disk/by-partlabel/efi"
-ESP_MNT=$(mktemp -d)
-trap 'umount "$ESP_MNT" 2>/dev/null; rmdir "$ESP_MNT" 2>/dev/null' EXIT
 
-if [ ! -e "$ESP_DEV" ]; then
-    echo "ab-status: ESP device not found" >&2
-    exit 1
-fi
-
-mount -t vfat -o ro "$ESP_DEV" "$ESP_MNT"
+read_slot_conf() {
+    # The ESP is normally already mounted at /efi by efi.automount; mounting it
+    # again fails. Prefer the live mount, fall back to a temporary one.
+    if [ -f /efi/slot.conf ]; then
+        . /efi/slot.conf
+        return 0
+    fi
+    [ -e "$ESP_DEV" ] || return 1
+    ESP_MNT=$(mktemp -d)
+    trap 'umount "$ESP_MNT" 2>/dev/null; rmdir "$ESP_MNT" 2>/dev/null' EXIT
+    mount -t vfat -o ro "$ESP_DEV" "$ESP_MNT" || return 1
+    [ -f "$ESP_MNT/slot.conf" ] && . "$ESP_MNT/slot.conf"
+    umount "$ESP_MNT"
+    trap - EXIT
+    rmdir "$ESP_MNT" 2>/dev/null || true
+}
 
 SLOT="(unknown)"
 TRIES_LEFT="(unknown)"
-if [ -f "$ESP_MNT/slot.conf" ]; then
-    . "$ESP_MNT/slot.conf"
-fi
+read_slot_conf || echo "ab-status: could not read slot.conf" >&2
 
-umount "$ESP_MNT"
+ROOTFS_A_DEV=$(readlink -f /dev/disk/by-partlabel/rootfs_a 2>/dev/null || echo "")
+ROOTFS_B_DEV=$(readlink -f /dev/disk/by-partlabel/rootfs_b 2>/dev/null || echo "")
 
-ROOTFS_A_DEV=$(readlink -f /dev/disk/by-partlabel/rootfs_a 2>/dev/null || echo "(not found)")
-ROOTFS_B_DEV=$(readlink -f /dev/disk/by-partlabel/rootfs_b 2>/dev/null || echo "(not found)")
+# The rootfs is an overlay whose lower layer is the real partition, mounted at
+# /rofs; `findmnt /` only ever says "overlay".
+RUNNING_DEV=$(findmnt -no SOURCE /rofs 2>/dev/null || true)
+[ -n "$RUNNING_DEV" ] || RUNNING_DEV=$(findmnt -no SOURCE / 2>/dev/null || true)
+RUNNING_SLOT="(unknown)"
+case "$RUNNING_DEV" in
+    "$ROOTFS_A_DEV") [ -n "$ROOTFS_A_DEV" ] && RUNNING_SLOT=a ;;
+    "$ROOTFS_B_DEV") [ -n "$ROOTFS_B_DEV" ] && RUNNING_SLOT=b ;;
+esac
 
-echo "Active slot:  $SLOT"
+echo "Running slot: $RUNNING_SLOT  (${RUNNING_DEV:-unknown})"
+echo "Next boot:    $SLOT  (slot.conf)"
 echo "Tries left:   $TRIES_LEFT"
+if [ "$RUNNING_SLOT" != "$SLOT" ] && [ "$RUNNING_SLOT" != "(unknown)" ] \
+   && [ "$SLOT" != "(unknown)" ]; then
+    echo "              ^ reboot pending: next boot switches slot"
+fi
 echo ""
-echo "rootfs_a:     $ROOTFS_A_DEV"
-echo "rootfs_b:     $ROOTFS_B_DEV"
+echo "rootfs_a:     ${ROOTFS_A_DEV:-(not found)}"
+echo "rootfs_b:     ${ROOTFS_B_DEV:-(not found)}"
