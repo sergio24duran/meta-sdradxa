@@ -22,28 +22,67 @@ Usage:
   ${PROG} <device> --yes --force overwrite an existing filesystem
 
 The board's UFS store is normally a whole disk (for example /dev/sda) or its
-first partition. The boot disk and anything currently mounted are refused.
+first partition. Any disk with a mounted filesystem is refused, so unmount the
+store before re-provisioning it.
 USAGE
 }
 
-boot_disk() {
-    # Whole-disk name backing /, e.g. mmcblk0 for /dev/mmcblk0p2.
-    root_src=$(findmnt -no SOURCE / 2>/dev/null || true)
-    [ -n "${root_src}" ] || return 0
-    lsblk -no PKNAME "${root_src}" 2>/dev/null | head -1
+disk_of() {
+    # Whole-disk name for a device: mmcblk1 for /dev/mmcblk1p3, sda for
+    # /dev/sda1, and the device itself when it is already a whole disk.
+    pk=$(lsblk -no PKNAME "$1" 2>/dev/null | head -n 1)
+    if [ -n "${pk}" ]; then echo "${pk}"; else basename "$1"; fi
+}
+
+busy_disks() {
+    # Every disk that currently has something mounted from it. Deriving this
+    # from / alone finds nothing on this board: the rootfs is an overlay, so
+    # `findmnt -no SOURCE /` prints "overlay" and lsblk rejects it. The real
+    # rootfs sits at /rofs, so ask every block-backed mount instead.
+    #
+    # Read the list into a variable first: piping into `while read` lets the
+    # lsblk calls in disk_of() swallow the rest of the input, which silently
+    # truncates the answer.
+    sources=$(findmnt -rno SOURCE 2>/dev/null || true)
+    for src in ${sources}; do
+        case "${src}" in
+            /dev/*) disk_of "${src}" ;;
+            *) continue ;;
+        esac
+    done | sort -u
+}
+
+mounts_of_disk() {
+    want=$1
+    # Same reason as busy_disks: no pipe into `while read`. `[ ] && printf`
+    # is explicitly neutralised because a false test as the last command in a
+    # loop body would trip `set -e`.
+    pairs=$(findmnt -rno TARGET,SOURCE 2>/dev/null || true)
+    set -- ${pairs}
+    while [ $# -ge 2 ]; do
+        tgt=$1; src=$2; shift 2
+        case "${src}" in /dev/*) ;; *) continue ;; esac
+        [ "$(disk_of "${src}")" = "${want}" ] && printf '%s ' "${tgt}" || true
+    done
+    return 0
 }
 
 list_devices() {
-    boot=$(boot_disk)
+    busy=$(busy_disks)
     printf '%-12s %-8s %-8s %-12s %s\n' NAME SIZE FSTYPE LABEL NOTE
-    lsblk -dno NAME,SIZE,TYPE | while read -r name size type; do
-        [ "${type}" = "disk" ] || continue
-        fstype=$(lsblk -no FSTYPE "/dev/${name}" 2>/dev/null | head -1)
-        label=$(lsblk -no LABEL "/dev/${name}" 2>/dev/null | head -1)
+    names=$(lsblk -dno NAME,TYPE 2>/dev/null | awk '$2 == "disk" { print $1 }')
+    for name in ${names}; do
+        size=$(lsblk -dno SIZE "/dev/${name}" 2>/dev/null | head -n 1)
+        fstype=$(lsblk -no FSTYPE "/dev/${name}" 2>/dev/null | head -n 1)
+        label=$(lsblk -no LABEL "/dev/${name}" 2>/dev/null | head -n 1)
         note=""
-        [ "${name}" = "${boot}" ] && note="BOOT DISK - refused"
+        for b in ${busy}; do
+            if [ "${name}" = "${b}" ]; then
+                note="IN USE ($(mounts_of_disk "${name}"))- refused"
+            fi
+        done
         printf '%-12s %-8s %-8s %-12s %s\n' \
-            "${name}" "${size}" "${fstype:--}" "${label:--}" "${note}"
+            "${name}" "${size:--}" "${fstype:--}" "${label:--}" "${note}"
     done
 }
 
@@ -71,14 +110,16 @@ if [ "${CONFIRM}" -ne 1 ]; then
     exit 2
 fi
 
-# Guard 1: never the disk we booted from.
-boot=$(boot_disk)
-target_disk=$(lsblk -no PKNAME "${DEVICE}" 2>/dev/null | head -1)
-[ -n "${target_disk}" ] || target_disk=$(basename "${DEVICE}")
-if [ -n "${boot}" ] && [ "${target_disk}" = "${boot}" ]; then
-    echo "${PROG}: ${DEVICE} is on the boot disk (${boot}) -- refused" >&2
-    exit 1
-fi
+# Guard 1: never a disk that anything is mounted from -- the boot media above
+# all, but a disk holding any live filesystem is not ours to format.
+target_disk=$(disk_of "${DEVICE}")
+for busy in $(busy_disks); do
+    if [ "${target_disk}" = "${busy}" ]; then
+        echo "${PROG}: ${DEVICE} is on ${busy}, which has mounted filesystems" >&2
+        echo "${PROG}: mounted from it: $(mounts_of_disk "${busy}")" >&2
+        exit 1
+    fi
+done
 
 # Guard 2: never something in use.
 if findmnt -rno TARGET --source "${DEVICE}" >/dev/null 2>&1; then
@@ -88,9 +129,9 @@ fi
 
 # Guard 3: an existing filesystem needs --force, so a second run cannot wipe a
 # provisioned store by accident.
-existing=$(lsblk -no FSTYPE "${DEVICE}" 2>/dev/null | head -1)
+existing=$(lsblk -no FSTYPE "${DEVICE}" 2>/dev/null | head -n 1)
 if [ -n "${existing}" ] && [ "${FORCE}" -ne 1 ]; then
-    existing_label=$(lsblk -no LABEL "${DEVICE}" 2>/dev/null | head -1)
+    existing_label=$(lsblk -no LABEL "${DEVICE}" 2>/dev/null | head -n 1)
     echo "${PROG}: ${DEVICE} already holds ${existing} (label '${existing_label:--}')" >&2
     echo "${PROG}: pass --force to destroy it" >&2
     exit 1
