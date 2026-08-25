@@ -10,7 +10,10 @@ usage() {
     echo "Modes:"
     echo "  ab-update <image>         Write image and switch slot (default)"
     echo "  ab-update --query         Print inactive partition device and exit"
-    echo "  ab-update --commit        Switch to inactive slot (image already written)"
+    echo "  ab-update --query-slot    Print inactive slot letter and exit"
+    echo "  ab-update --commit <slot> Select <slot> for the next boot (idempotent)"
+    echo "  ab-update --commit        Switch to the inactive slot -- NOT"
+    echo "                            idempotent, kept for compatibility"
     echo ""
     echo "Options:"
     echo "  --force   Skip confirmation prompt"
@@ -22,14 +25,23 @@ usage() {
 MODE=write
 FORCE=0
 IMAGE=""
+WANT_SLOT=""
+PREV=""
 for arg in "$@"; do
     case "$arg" in
         --query) MODE=query ;;
+        --query-slot) MODE=query_slot ;;
         --commit) MODE=commit ;;
         --force) FORCE=1 ;;
         -h|--help) usage ;;
+        a|b)
+            # Only meaningful right after --commit; anywhere else it is an image
+            # path that happens to be called "a" or "b", which nobody does.
+            if [ "$PREV" = "--commit" ]; then WANT_SLOT="$arg"; else IMAGE="$arg"; fi
+            ;;
         *) IMAGE="$arg" ;;
     esac
+    PREV="$arg"
 done
 
 ESP_DEV="/dev/disk/by-partlabel/efi"
@@ -73,8 +85,29 @@ case "$MODE" in
         echo "$TARGET_REAL"
         ;;
 
+    query_slot)
+        get_inactive_slot
+        umount "$ESP_MNT"
+        echo "$INACTIVE"
+        ;;
+
     commit)
         get_inactive_slot
+        if [ -n "$WANT_SLOT" ]; then
+            # Explicit target: idempotent, so a second run cannot undo the
+            # first. `--commit` without a slot toggles, and a relaunched push
+            # once flipped a board back to its old rootfs while every log line
+            # read like success (LES-025).
+            if [ "$WANT_SLOT" = "$SLOT" ]; then
+                umount "$ESP_MNT"
+                echo "Slot $WANT_SLOT is already selected for the next boot. Nothing to do."
+                exit 0
+            fi
+            INACTIVE="$WANT_SLOT"
+        else
+            echo "ab-update: WARNING --commit without a slot toggles; running it" >&2
+            echo "ab-update: twice returns to where you started (LES-025)." >&2
+        fi
         if [ "$FORCE" -ne 1 ]; then
             echo "Current slot:    $SLOT"
             echo "Switching to:    $INACTIVE"
@@ -89,7 +122,7 @@ case "$MODE" in
         echo "TRIES_LEFT=3" >> "$ESP_MNT/slot.conf"
         sync
         umount "$ESP_MNT"
-        echo "Slot switched to $INACTIVE. Reboot to apply."
+        echo "Next boot set to slot $INACTIVE (was $SLOT). Reboot to apply."
         ;;
 
     write)
