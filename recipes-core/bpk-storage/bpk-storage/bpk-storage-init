@@ -1,0 +1,28 @@
+#!/bin/sh
+# Create the BPK product data skeleton on the UFS persistent store.
+#
+# Runs before opt-bpk.mount binds /mnt/ufscard/bpk onto /opt/bpk. Idempotent:
+# existing directories and their contents are left untouched. Never creates
+# the filesystem itself -- an unprovisioned board must fail loudly here rather
+# than silently boot with an empty /opt/bpk (see bpk-storage-provision).
+set -eu
+
+STORE=/mnt/ufscard
+ROOT="${STORE}/bpk"
+
+if ! mountpoint -q "${STORE}"; then
+    echo "bpk-storage-init: ${STORE} is not mounted -- the UFS store is missing" >&2
+    echo "bpk-storage-init: run 'bpk-storage-provision --list' to inspect the board" >&2
+    exit 1
+fi
+
+mkdir -p "${ROOT}/models" "${ROOT}/missions" "${ROOT}/config" "${ROOT}/keys" \
+         "${ROOT}/logs/missions"
+
+chmod 0755 "${ROOT}" "${ROOT}/models" "${ROOT}/missions" "${ROOT}/config" \
+           "${ROOT}/logs" "${ROOT}/logs/missions"
+# Mission signing keys: only the public key ever lands here, but the directory
+# stays root-only so a compromised non-root process cannot swap it (DEC-020).
+chmod 0700 "${ROOT}/keys"
+
+exit 0

@@ -1,0 +1,103 @@
+#!/bin/sh
+# Provision the UFS persistent store that backs /opt/bpk.
+#
+# The UFS is the only storage that survives a full SD card reflash, so it holds
+# the signed mission, the mission public key, the AI model, the camera
+# calibration and the flight logs (DEC-011). This tool creates the ext4
+# filesystem labelled 'ufs-data' that mnt-ufscard.mount looks for.
+#
+# It formats a block device, so it never guesses: pass the device explicitly,
+# confirm with --yes, and it still refuses to touch the disk the system booted
+# from or any mounted device.
+set -eu
+
+LABEL=ufs-data
+PROG=$(basename "$0")
+
+usage() {
+    cat <<USAGE
+Usage:
+  ${PROG} --list                 inspect candidate block devices
+  ${PROG} <device> --yes         create ext4 '${LABEL}' on <device>
+  ${PROG} <device> --yes --force overwrite an existing filesystem
+
+The board's UFS store is normally a whole disk (for example /dev/sda) or its
+first partition. The boot disk and anything currently mounted are refused.
+USAGE
+}
+
+boot_disk() {
+    # Whole-disk name backing /, e.g. mmcblk0 for /dev/mmcblk0p2.
+    root_src=$(findmnt -no SOURCE / 2>/dev/null || true)
+    [ -n "${root_src}" ] || return 0
+    lsblk -no PKNAME "${root_src}" 2>/dev/null | head -1
+}
+
+list_devices() {
+    boot=$(boot_disk)
+    printf '%-12s %-8s %-8s %-12s %s\n' NAME SIZE FSTYPE LABEL NOTE
+    lsblk -dno NAME,SIZE,TYPE | while read -r name size type; do
+        [ "${type}" = "disk" ] || continue
+        fstype=$(lsblk -no FSTYPE "/dev/${name}" 2>/dev/null | head -1)
+        label=$(lsblk -no LABEL "/dev/${name}" 2>/dev/null | head -1)
+        note=""
+        [ "${name}" = "${boot}" ] && note="BOOT DISK - refused"
+        printf '%-12s %-8s %-8s %-12s %s\n' \
+            "${name}" "${size}" "${fstype:--}" "${label:--}" "${note}"
+    done
+}
+
+DEVICE=""
+CONFIRM=0
+FORCE=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --list) list_devices; exit 0 ;;
+        --yes) CONFIRM=1 ;;
+        --force) FORCE=1 ;;
+        -h|--help) usage; exit 0 ;;
+        -*) echo "${PROG}: unknown option $1" >&2; usage >&2; exit 2 ;;
+        *) DEVICE="$1" ;;
+    esac
+    shift
+done
+
+[ -n "${DEVICE}" ] || { usage >&2; exit 2; }
+[ -b "${DEVICE}" ] || { echo "${PROG}: ${DEVICE} is not a block device" >&2; exit 2; }
+
+if [ "${CONFIRM}" -ne 1 ]; then
+    echo "${PROG}: refusing to format ${DEVICE} without --yes" >&2
+    exit 2
+fi
+
+# Guard 1: never the disk we booted from.
+boot=$(boot_disk)
+target_disk=$(lsblk -no PKNAME "${DEVICE}" 2>/dev/null | head -1)
+[ -n "${target_disk}" ] || target_disk=$(basename "${DEVICE}")
+if [ -n "${boot}" ] && [ "${target_disk}" = "${boot}" ]; then
+    echo "${PROG}: ${DEVICE} is on the boot disk (${boot}) -- refused" >&2
+    exit 1
+fi
+
+# Guard 2: never something in use.
+if findmnt -rno TARGET --source "${DEVICE}" >/dev/null 2>&1; then
+    echo "${PROG}: ${DEVICE} is mounted -- unmount it first" >&2
+    exit 1
+fi
+
+# Guard 3: an existing filesystem needs --force, so a second run cannot wipe a
+# provisioned store by accident.
+existing=$(lsblk -no FSTYPE "${DEVICE}" 2>/dev/null | head -1)
+if [ -n "${existing}" ] && [ "${FORCE}" -ne 1 ]; then
+    existing_label=$(lsblk -no LABEL "${DEVICE}" 2>/dev/null | head -1)
+    echo "${PROG}: ${DEVICE} already holds ${existing} (label '${existing_label:--}')" >&2
+    echo "${PROG}: pass --force to destroy it" >&2
+    exit 1
+fi
+
+echo "${PROG}: creating ext4 '${LABEL}' on ${DEVICE}"
+mkfs.ext4 -F -L "${LABEL}" "${DEVICE}"
+
+echo "${PROG}: done. Mount and populate with:"
+echo "  systemctl start mnt-ufscard.mount bpk-storage-init.service opt-bpk.mount"

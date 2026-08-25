@@ -1,0 +1,20 @@
+[Unit]
+Description=BPK product data (bind mount from the UFS persistent store)
+Documentation=man:mount(8)
+# The rootfs writable layer is a 512 MB tmpfs (initramfs overlayroot), so
+# anything written under / is lost on reboot. Product mode reads its signed
+# mission, public key, model and camera calibration from /opt/bpk, which must
+# therefore live on real storage (DEC-011, amended: UFS, not the SD data
+# partition, so the product data survives a full card reflash).
+Requires=bpk-storage-init.service
+After=bpk-storage-init.service
+RequiresMountsFor=/mnt/ufscard
+
+[Mount]
+What=/mnt/ufscard/bpk
+Where=/opt/bpk
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

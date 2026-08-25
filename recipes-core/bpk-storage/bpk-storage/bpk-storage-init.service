@@ -1,0 +1,14 @@
+[Unit]
+Description=Create the BPK product data skeleton on the UFS store
+Documentation=file:///usr/share/bpk-storage/README
+Requires=mnt-ufscard.mount
+After=mnt-ufscard.mount
+Before=opt-bpk.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bpk-storage-init
+
+[Install]
+WantedBy=local-fs.target
