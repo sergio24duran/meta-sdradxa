@@ -160,6 +160,14 @@ do_install() {
     # --- Development headers ---
     cp -r ${S}/include/QNN/* ${D}${includedir}/QNN/
     chmod -R 0644 ${D}${includedir}/QNN/
+
+    # QnnWrapperUtils.hpp and friends live outside include/QNN in the SDK
+    # layout, and anything building a QnnGraph needs them: without these the
+    # -dev package looks complete and then fails at the first #include
+    # (sw-bpk perception, yocto-bpk#74).
+    install -d ${D}${datadir}/QNN/converter/jni
+    cp -r ${S}/share/QNN/converter/jni/* ${D}${datadir}/QNN/converter/jni/
+    find ${D}${datadir}/QNN -type f -exec chmod 0644 {} +
 }
 
 # QNN libraries use bare .so names (no .so.N versioning)
@@ -175,6 +183,6 @@ FILES:${PN} = " \
     ${bindir}/* \
     ${sysconfdir}/profile.d/qnn-env.sh \
 "
-FILES:${PN}-dev = "${includedir}/QNN/*"
+FILES:${PN}-dev = "${includedir}/QNN/* ${datadir}/QNN/converter"
 
 RDEPENDS:${PN} = "fastrpc"
