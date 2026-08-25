@@ -1,0 +1,25 @@
+[Unit]
+Description=Create the BPK product data skeleton on the UFS store
+Documentation=file:///usr/share/bpk-storage/README
+# DefaultDependencies=no is load-bearing, not tidiness. A normal service is
+# ordered After=basic.target, and basic.target comes after sysinit.target,
+# which comes after local-fs.target -- so pulling a normal service into
+# local-fs.target closes an ordering cycle. systemd breaks such a cycle by
+# deleting jobs, and the ones it picked were systemd-tmpfiles-setup,
+# systemd-timesyncd and systemd-resolved: /var/volatile/tmp then never got
+# created, /var/tmp stayed a dangling symlink, and every service with
+# PrivateTmp=yes failed to start.
+DefaultDependencies=no
+Requires=mnt-ufscard.mount
+After=mnt-ufscard.mount
+Before=opt-bpk.mount local-fs.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bpk-storage-init
+
+[Install]
+WantedBy=local-fs.target

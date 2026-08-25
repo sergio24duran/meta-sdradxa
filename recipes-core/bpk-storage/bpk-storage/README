@@ -1,0 +1,39 @@
+BPK persistent product data (/opt/bpk)
+======================================
+
+The rootfs is read-only with a 512 MB tmpfs overlay for writes, so everything
+written under / is gone at the next boot. Product mode reads its signed
+mission, mission public key, AI model and camera calibration from /opt/bpk and
+refuses to arm without them, so that path must be real storage.
+
+Layout
+------
+  /mnt/ufscard            ext4 labelled 'ufs-data' on the UFS (128 GB)
+    └── bpk/              bound onto /opt/bpk at boot by opt-bpk.mount
+        ├── models/       active.so  (QNN model library, uploaded in pairing)
+        ├── missions/     active.json + active.json.sig
+        ├── config/       camera.json, mode
+        ├── keys/         mission.pub   (0700)
+        └── logs/missions JSON-lines flight logs
+
+The UFS was chosen over the SD 'data' partition because a full card reflash
+wipes the SD but leaves the UFS untouched: an image update never costs the
+operator the mission, the keys or the model.
+
+Boot chain
+----------
+  mnt-ufscard.mount  ->  bpk-storage-init.service  ->  opt-bpk.mount
+                         (creates the skeleton)       (bind onto /opt/bpk)
+
+If the UFS store is missing, bpk-storage-init fails loudly, opt-bpk.mount does
+not run, and /opt/bpk stays the empty read-only directory shipped in the image.
+Product mode then Fatals on the missing mission instead of arming: fail closed.
+
+Fresh board
+-----------
+  bpk-storage-provision --list          # inspect, boot disk is marked
+  bpk-storage-provision /dev/sdX --yes  # create ext4 'ufs-data'
+  systemctl start mnt-ufscard.mount bpk-storage-init.service opt-bpk.mount
+
+The tool refuses the boot disk, refuses mounted devices, and refuses to
+overwrite an existing filesystem unless --force is given.
