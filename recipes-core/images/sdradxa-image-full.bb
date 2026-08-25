@@ -19,4 +19,5 @@ IMAGE_INSTALL:append = " \
     libgpiod-tools \
     bpk-field-capture \
     bpk-storage \
+    sw-bpk \
 "
