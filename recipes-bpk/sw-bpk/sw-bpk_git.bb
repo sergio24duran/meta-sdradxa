@@ -60,11 +60,14 @@ SYSTEMD_SERVICE:${PN} = " \
     bpk-telemetry.service \
     bpk-hmi.service \
 "
-# Nothing auto-starts yet: the services are installed and inspectable, but
+# Enabled since the bench ran all five by hand against a real FC (2026-08-26):
+# the deliberate step this was waiting for. Auto-start is not auto-arm --
 # arming still needs the physical START button (DEC-017) and product mode fails
-# closed without a signed mission. Enabling them is a separate, deliberate step
-# once the bench has run them by hand.
-SYSTEMD_AUTO_ENABLE = "disable"
+# closed without a signed mission, a camera.json, /opt/bpk or FC telemetry.
+#
+# This has to happen in the image: /etc is a volatile overlay, so a bench
+# `systemctl enable` is undone by the next reboot (LES-030, yocto-bpk#81).
+SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {
     install -d ${D}${bindir}

@@ -18,7 +18,17 @@ S = "${WORKDIR}"
 inherit allarch systemd
 
 SYSTEMD_SERVICE:${PN} = "bpk-field-capture.service"
-SYSTEMD_AUTO_ENABLE = "enable"
+# Installed but NOT enabled: this is a dataset tool, not a product service, and
+# it cannot share a boot with bpk-hmi. Both are WantedBy=multi-user.target and
+# both drive GPIO line 98 -- gpiomon holds the line exclusively, so two enabled
+# units are a race for the START button. operating-modes.md gives that button to
+# bpk-hmi in product mode, so bpk-hmi wins the default (yocto-bpk#81).
+#
+# For a capture session (models_bpk#22), one command on the board:
+#   systemctl disable --now bpk-hmi && systemctl enable --now bpk-field-capture
+# The --now half is what does the work; /etc is volatile, so the enable/disable
+# half lasts until the next reboot, which is exactly the wanted scope.
+SYSTEMD_AUTO_ENABLE = "disable"
 
 do_install() {
     install -d ${D}${bindir}
