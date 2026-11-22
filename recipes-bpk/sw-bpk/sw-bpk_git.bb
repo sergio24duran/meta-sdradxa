@@ -16,7 +16,7 @@ SRC_URI = " \
     https://github.com/nanomsg/nng/archive/refs/tags/v1.10.2.tar.gz;name=nng;subdir=fetchcontent \
     https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz;name=json;subdir=fetchcontent \
 "
-SRCREV_sw = "057a2703ac32dbf628be9bb9e362e14ffffa1e3d"
+SRCREV_sw = "f99a34d3b202212d5886df9f8d640560ce1c165b"
 SRCREV_FORMAT = "sw"
 
 # Same pins the CMake FetchContent declarations carry -- if they drift, the
