@@ -36,7 +36,21 @@ inherit cmake systemd pkgconfig
 # trees. Without this the configure step dies trying to download nng.
 FETCHCONTENT_DIR = "${WORKDIR}/fetchcontent"
 
+# cmake.bbclass never sets CMAKE_BUILD_TYPE, so CMake contributes no
+# optimisation of its own and the build ran at OE's -O2 with asserts live,
+# while every validated latency number came from the host cross-build's Release
+# flags (-O3 -DNDEBUG). On the board the packaged benchmark measured 20.4 ms
+# against the host build's 13.5 ms on the same gold core. The benchmark of
+# record has to be built the same way every time or its numbers stop being
+# comparable (LES-001), and 7 ms is a quarter of the perception budget.
+# Release alone is not enough: OE blanks the optimisation out of
+# CMAKE_CXX_FLAGS_RELEASE (leaving just -DNDEBUG) so its own -O2 governs. The
+# measured cost of -O2 here is ~6.7 ms per inference, a quarter of the
+# perception budget, so this binary opts out of the distro default.
+CXXFLAGS:append = " -O3"
+
 EXTRA_OECMAKE = " \
+    -DCMAKE_BUILD_TYPE=Release \
     -DBPK_BUILD_TESTS=OFF \
     -DQNN_SDK_ROOT=${STAGING_DIR_TARGET}${prefix} \
     -DBPK_LIBCAMERA_ROOT=${STAGING_DIR_TARGET} \
